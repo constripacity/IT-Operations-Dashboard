@@ -1,9 +1,11 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import settings
 from app.database import init_db
@@ -53,6 +55,13 @@ app.include_router(knowledge_router.router)
 app.include_router(logs_router.router)
 app.include_router(websocket_router.router)
 app.include_router(dashboard_router.router)  # Page routes last so API takes precedence
+
+
+@app.exception_handler(StarletteHTTPException)
+async def custom_404_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == 404 and not request.url.path.startswith("/api/"):
+        return templates.TemplateResponse("404.html", {"request": request}, status_code=404)
+    return HTMLResponse(content=str(exc.detail), status_code=exc.status_code)
 
 
 @app.get("/health")
