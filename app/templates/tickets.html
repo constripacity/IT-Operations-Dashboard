@@ -1,4 +1,193 @@
-<!-- Ticket management page — defined in Phase 8 -->
 {% extends "base.html" %}
 {% block title %}Tickets — IT Operations{% endblock %}
-{% block content %}<h1>Tickets</h1>{% endblock %}
+{% block page_title %}Ticket Management{% endblock %}
+
+{% block content %}
+<!-- Actions & Filters -->
+<div class="flex flex-wrap justify-between items-center gap-3 mb-6">
+    <div class="flex flex-wrap gap-2">
+        <select id="filter-status" onchange="loadTickets()" class="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-cyan-500">
+            <option value="">All Status</option>
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+        </select>
+        <select id="filter-priority" onchange="loadTickets()" class="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-cyan-500">
+            <option value="">All Priority</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+        </select>
+    </div>
+    <button onclick="showCreateTicketModal()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg text-sm font-medium transition-colors">
+        + New Ticket
+    </button>
+</div>
+
+<!-- Tickets Table -->
+<div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-slate-700 text-slate-400">
+                    <th class="text-left px-4 py-3 font-medium">#</th>
+                    <th class="text-left px-4 py-3 font-medium">Title</th>
+                    <th class="text-left px-4 py-3 font-medium hidden md:table-cell">Category</th>
+                    <th class="text-left px-4 py-3 font-medium">Priority</th>
+                    <th class="text-left px-4 py-3 font-medium">Status</th>
+                    <th class="text-left px-4 py-3 font-medium hidden lg:table-cell">Assigned</th>
+                    <th class="text-left px-4 py-3 font-medium hidden lg:table-cell">Created</th>
+                    <th class="text-left px-4 py-3 font-medium">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="tickets-body">
+                <tr><td colspan="8" class="text-center py-8 text-slate-500">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+async function loadTickets() {
+    try {
+        const status = document.getElementById('filter-status').value;
+        const priority = document.getElementById('filter-priority').value;
+        let url = '/api/tickets?sort_by=created_at&order=desc';
+        if (status) url += `&status=${status}`;
+        if (priority) url += `&priority=${priority}`;
+
+        const tickets = await api(url);
+        const tbody = document.getElementById('tickets-body');
+
+        if (tickets.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-500">No tickets found</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = tickets.map(t => `
+            <tr class="border-b border-slate-700/50 hover:bg-slate-750">
+                <td class="px-4 py-3 text-slate-500">${t.id}</td>
+                <td class="px-4 py-3">
+                    <div class="font-medium">${escapeHtml(t.title)}</div>
+                    <div class="text-xs text-slate-500 md:hidden">${t.category || '—'}</div>
+                </td>
+                <td class="px-4 py-3 hidden md:table-cell text-slate-400">${t.category || '—'}</td>
+                <td class="px-4 py-3">${priorityBadge(t.priority)}</td>
+                <td class="px-4 py-3">${statusBadge(t.status)}</td>
+                <td class="px-4 py-3 hidden lg:table-cell text-slate-400">${t.assigned_to || '—'}</td>
+                <td class="px-4 py-3 hidden lg:table-cell text-slate-400">${timeAgo(t.created_at)}</td>
+                <td class="px-4 py-3">
+                    <div class="flex gap-1">
+                        <select onchange="updateTicketStatus(${t.id}, this.value)" class="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs">
+                            <option value="open" ${t.status === 'open' ? 'selected' : ''}>Open</option>
+                            <option value="in_progress" ${t.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+                            <option value="resolved" ${t.status === 'resolved' ? 'selected' : ''}>Resolved</option>
+                            <option value="closed" ${t.status === 'closed' ? 'selected' : ''}>Closed</option>
+                        </select>
+                        <button onclick="deleteTicket(${t.id})" class="px-2 py-1 text-red-400 hover:bg-red-900/30 rounded text-xs">Del</button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        console.error('Load tickets error:', err);
+    }
+}
+
+async function updateTicketStatus(id, status) {
+    try {
+        await api(`/api/tickets/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ status }),
+        });
+        showToast('Ticket updated', 'success');
+        loadTickets();
+    } catch (err) {}
+}
+
+async function deleteTicket(id) {
+    if (!confirm('Delete this ticket?')) return;
+    try {
+        await api(`/api/tickets/${id}`, { method: 'DELETE' });
+        showToast('Ticket deleted', 'success');
+        loadTickets();
+    } catch (err) {}
+}
+
+function showCreateTicketModal() {
+    const modal = document.createElement('div');
+    modal.id = 'create-ticket-modal';
+    modal.className = 'modal-backdrop';
+    modal.innerHTML = `
+        <div class="bg-slate-800 rounded-xl p-6 w-full max-w-lg mx-4 border border-slate-700">
+            <h3 class="text-lg font-semibold mb-4">Create Ticket</h3>
+            <form onsubmit="createTicket(event)">
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm text-slate-400 mb-1">Title</label>
+                        <input id="tkt-title" required class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-400 mb-1">Description</label>
+                        <textarea id="tkt-desc" rows="3" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm text-slate-400 mb-1">Priority</label>
+                            <select id="tkt-priority" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm">
+                                <option value="low">Low</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="high">High</option>
+                                <option value="critical">Critical</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-slate-400 mb-1">Category</label>
+                            <select id="tkt-category" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm">
+                                <option value="network">Network</option>
+                                <option value="hardware">Hardware</option>
+                                <option value="software">Software</option>
+                                <option value="security">Security</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-400 mb-1">Assigned To</label>
+                        <input id="tkt-assigned" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500" placeholder="Optional">
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-5">
+                    <button type="submit" class="flex-1 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg text-sm font-medium transition-colors">Create</button>
+                    <button type="button" onclick="closeModal('create-ticket-modal')" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition-colors">Cancel</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+async function createTicket(e) {
+    e.preventDefault();
+    try {
+        await api('/api/tickets', {
+            method: 'POST',
+            body: JSON.stringify({
+                title: document.getElementById('tkt-title').value,
+                description: document.getElementById('tkt-desc').value,
+                priority: document.getElementById('tkt-priority').value,
+                category: document.getElementById('tkt-category').value,
+                assigned_to: document.getElementById('tkt-assigned').value || null,
+            }),
+        });
+        closeModal('create-ticket-modal');
+        showToast('Ticket created', 'success');
+        loadTickets();
+    } catch (err) {}
+}
+
+loadTickets();
+</script>
+{% endblock %}

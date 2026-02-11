@@ -17,6 +17,7 @@ from app.routers import tickets as tickets_router
 from app.routers import knowledge as knowledge_router
 from app.routers import logs as logs_router
 from app.routers import websocket as websocket_router
+from app.routers import dashboard as dashboard_router
 from app.services.health_checker import health_check_loop
 
 
@@ -51,6 +52,7 @@ app.include_router(tickets_router.router)
 app.include_router(knowledge_router.router)
 app.include_router(logs_router.router)
 app.include_router(websocket_router.router)
+app.include_router(dashboard_router.router)  # Page routes last so API takes precedence
 
 
 @app.get("/health")

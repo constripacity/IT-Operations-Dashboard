@@ -1,4 +1,111 @@
-<!-- Live log viewer — defined in Phase 8 -->
 {% extends "base.html" %}
 {% block title %}Logs — IT Operations{% endblock %}
-{% block content %}<h1>System Logs</h1>{% endblock %}
+{% block page_title %}System Logs{% endblock %}
+
+{% block content %}
+<!-- Filters -->
+<div class="flex flex-wrap gap-3 mb-6">
+    <select id="log-level" onchange="loadLogs()" class="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-cyan-500">
+        <option value="">All Levels</option>
+        <option value="INFO">INFO</option>
+        <option value="WARNING">WARNING</option>
+        <option value="ERROR">ERROR</option>
+        <option value="CRITICAL">CRITICAL</option>
+    </select>
+    <select id="log-source" onchange="loadLogs()" class="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-cyan-500">
+        <option value="">All Sources</option>
+    </select>
+    <select id="log-limit" onchange="loadLogs()" class="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-cyan-500">
+        <option value="25">Last 25</option>
+        <option value="50" selected>Last 50</option>
+        <option value="100">Last 100</option>
+    </select>
+    <div class="flex items-center gap-2 ml-auto">
+        <span class="pulse-dot online"></span>
+        <span class="text-xs text-slate-400">Auto-refresh: 10s</span>
+    </div>
+</div>
+
+<!-- Logs Table -->
+<div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-slate-700 text-slate-400">
+                    <th class="text-left px-4 py-3 font-medium">Timestamp</th>
+                    <th class="text-left px-4 py-3 font-medium">Level</th>
+                    <th class="text-left px-4 py-3 font-medium hidden md:table-cell">Source</th>
+                    <th class="text-left px-4 py-3 font-medium">Message</th>
+                </tr>
+            </thead>
+            <tbody id="logs-body">
+                <tr><td colspan="4" class="text-center py-8 text-slate-500">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+async function loadSources() {
+    try {
+        const sources = await api('/api/logs/sources');
+        const select = document.getElementById('log-source');
+        sources.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s;
+            opt.textContent = s;
+            select.appendChild(opt);
+        });
+    } catch (err) {}
+}
+
+async function loadLogs() {
+    try {
+        const level = document.getElementById('log-level').value;
+        const source = document.getElementById('log-source').value;
+        const limit = document.getElementById('log-limit').value;
+        let url = `/api/logs?limit=${limit}`;
+        if (level) url += `&level=${level}`;
+        if (source) url += `&source=${source}`;
+
+        const logs = await api(url);
+        const tbody = document.getElementById('logs-body');
+
+        if (logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-slate-500">No logs found</td></tr>';
+            return;
+        }
+
+        const levelColors = {
+            INFO: 'bg-blue-900/50 text-blue-300',
+            WARNING: 'bg-yellow-900/50 text-yellow-300',
+            ERROR: 'bg-red-900/50 text-red-300',
+            CRITICAL: 'bg-red-900 text-red-200 font-bold',
+        };
+
+        tbody.innerHTML = logs.map(log => `
+            <tr class="border-b border-slate-700/50 hover:bg-slate-750">
+                <td class="px-4 py-2 text-slate-400 whitespace-nowrap text-xs">${formatDate(log.timestamp)}</td>
+                <td class="px-4 py-2">
+                    <span class="px-2 py-0.5 rounded text-xs font-medium ${levelColors[log.level] || ''}">${log.level}</span>
+                </td>
+                <td class="px-4 py-2 hidden md:table-cell text-slate-400 text-xs font-mono">${escapeHtml(log.source)}</td>
+                <td class="px-4 py-2 text-slate-300">${escapeHtml(log.message)}</td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        console.error('Load logs error:', err);
+    }
+}
+
+// Load sources dropdown, then logs
+loadSources();
+loadLogs();
+
+// Auto-refresh every 10 seconds
+setInterval(loadLogs, 10000);
+
+// Refresh on WebSocket events
+window.addEventListener('ws-event', () => loadLogs());
+</script>
+{% endblock %}

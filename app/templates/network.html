@@ -1,4 +1,196 @@
-<!-- Network tools page — defined in Phase 8 -->
 {% extends "base.html" %}
 {% block title %}Network Tools — IT Operations{% endblock %}
-{% block content %}<h1>Network Tools</h1>{% endblock %}
+{% block page_title %}Network Tools{% endblock %}
+
+{% block content %}
+<!-- Tabs -->
+<div class="flex gap-1 mb-6 border-b border-slate-700 overflow-x-auto">
+    <button onclick="switchTab('dns')" id="tab-dns" class="px-4 py-2 text-sm font-medium whitespace-nowrap tab-active">DNS Lookup</button>
+    <button onclick="switchTab('geoip')" id="tab-geoip" class="px-4 py-2 text-sm font-medium whitespace-nowrap text-slate-400 hover:text-slate-200">IP Geolocation</button>
+    <button onclick="switchTab('portscan')" id="tab-portscan" class="px-4 py-2 text-sm font-medium whitespace-nowrap text-slate-400 hover:text-slate-200">Port Check</button>
+    <button onclick="switchTab('rdns')" id="tab-rdns" class="px-4 py-2 text-sm font-medium whitespace-nowrap text-slate-400 hover:text-slate-200">Reverse DNS</button>
+</div>
+
+<!-- DNS Lookup -->
+<div id="panel-dns" class="tool-panel">
+    <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <div class="flex flex-wrap gap-3 mb-4">
+            <input id="dns-domain" class="flex-1 min-w-[200px] bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500" placeholder="e.g. example.com">
+            <select id="dns-type" class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm">
+                <option value="A">A</option>
+                <option value="AAAA">AAAA</option>
+                <option value="MX">MX</option>
+                <option value="NS">NS</option>
+                <option value="TXT">TXT</option>
+                <option value="CNAME">CNAME</option>
+            </select>
+            <button onclick="runDns()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded text-sm font-medium transition-colors">Lookup</button>
+        </div>
+        <div id="dns-results" class="text-sm text-slate-400">Enter a domain and click Lookup.</div>
+    </div>
+</div>
+
+<!-- IP Geolocation -->
+<div id="panel-geoip" class="tool-panel hidden">
+    <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <div class="flex flex-wrap gap-3 mb-4">
+            <input id="geoip-ip" class="flex-1 min-w-[200px] bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500" placeholder="e.g. 8.8.8.8">
+            <button onclick="runGeoip()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded text-sm font-medium transition-colors">Lookup</button>
+        </div>
+        <div id="geoip-results" class="text-sm text-slate-400">Enter an IP address and click Lookup.</div>
+    </div>
+</div>
+
+<!-- Port Scanner -->
+<div id="panel-portscan" class="tool-panel hidden">
+    <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <div class="flex flex-wrap gap-3 mb-4">
+            <input id="portscan-host" class="flex-1 min-w-[200px] bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500" placeholder="e.g. example.com">
+            <input id="portscan-ports" class="w-48 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500" placeholder="Ports (e.g. 80,443,22)">
+            <button onclick="runPortscan()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded text-sm font-medium transition-colors">Scan</button>
+        </div>
+        <div id="portscan-results" class="text-sm text-slate-400">Enter a host and optional ports. Default: 22, 80, 443, 3306, 5432, 8080.</div>
+    </div>
+</div>
+
+<!-- Reverse DNS -->
+<div id="panel-rdns" class="tool-panel hidden">
+    <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <div class="flex flex-wrap gap-3 mb-4">
+            <input id="rdns-ip" class="flex-1 min-w-[200px] bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500" placeholder="e.g. 8.8.8.8">
+            <button onclick="runRdns()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded text-sm font-medium transition-colors">Resolve</button>
+        </div>
+        <div id="rdns-results" class="text-sm text-slate-400">Enter an IP address and click Resolve.</div>
+    </div>
+</div>
+
+<script>
+function switchTab(tab) {
+    document.querySelectorAll('.tool-panel').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('[id^="tab-"]').forEach(t => {
+        t.className = 'px-4 py-2 text-sm font-medium whitespace-nowrap text-slate-400 hover:text-slate-200';
+    });
+    document.getElementById(`panel-${tab}`).classList.remove('hidden');
+    document.getElementById(`tab-${tab}`).className = 'px-4 py-2 text-sm font-medium whitespace-nowrap tab-active';
+}
+
+async function runDns() {
+    const domain = document.getElementById('dns-domain').value.trim();
+    if (!domain) return;
+    const recordType = document.getElementById('dns-type').value;
+    document.getElementById('dns-results').innerHTML = '<div class="text-cyan-400">Looking up...</div>';
+
+    try {
+        const data = await api('/api/network/dns', {
+            method: 'POST',
+            body: JSON.stringify({ domain, record_type: recordType }),
+        });
+
+        if (data.error) {
+            document.getElementById('dns-results').innerHTML = `<div class="text-red-400">${escapeHtml(data.error)}</div>`;
+            return;
+        }
+
+        document.getElementById('dns-results').innerHTML = `
+            <table class="w-full">
+                <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">Domain</td><td class="py-2">${escapeHtml(data.domain)}</td></tr>
+                <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">Type</td><td class="py-2">${data.record_type}</td></tr>
+                <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">TTL</td><td class="py-2">${data.ttl}s</td></tr>
+                <tr><td class="py-2 text-slate-400 pr-4 align-top">Records</td><td class="py-2">${data.records.map(r => `<div class="font-mono text-emerald-400">${escapeHtml(r)}</div>`).join('')}</td></tr>
+            </table>
+        `;
+    } catch (err) {}
+}
+
+async function runGeoip() {
+    const ip = document.getElementById('geoip-ip').value.trim();
+    if (!ip) return;
+    document.getElementById('geoip-results').innerHTML = '<div class="text-cyan-400">Looking up...</div>';
+
+    try {
+        const data = await api('/api/network/geoip', {
+            method: 'POST',
+            body: JSON.stringify({ ip }),
+        });
+
+        if (data.error) {
+            document.getElementById('geoip-results').innerHTML = `<div class="text-red-400">${escapeHtml(data.error)}</div>`;
+            return;
+        }
+
+        document.getElementById('geoip-results').innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <table class="w-full">
+                    <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">IP</td><td class="py-2 font-mono">${escapeHtml(data.ip)}</td></tr>
+                    <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">Country</td><td class="py-2">${escapeHtml(data.country || '—')}</td></tr>
+                    <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">Region</td><td class="py-2">${escapeHtml(data.region || '—')}</td></tr>
+                    <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">City</td><td class="py-2">${escapeHtml(data.city || '—')}</td></tr>
+                    <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">ZIP</td><td class="py-2">${escapeHtml(data.zip || '—')}</td></tr>
+                </table>
+                <table class="w-full">
+                    <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">ISP</td><td class="py-2">${escapeHtml(data.isp || '—')}</td></tr>
+                    <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">Organization</td><td class="py-2">${escapeHtml(data.organization || '—')}</td></tr>
+                    <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">Timezone</td><td class="py-2">${escapeHtml(data.timezone || '—')}</td></tr>
+                    <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">Latitude</td><td class="py-2">${data.latitude || '—'}</td></tr>
+                    <tr><td class="py-2 text-slate-400 pr-4">Longitude</td><td class="py-2">${data.longitude || '—'}</td></tr>
+                </table>
+            </div>
+        `;
+    } catch (err) {}
+}
+
+async function runPortscan() {
+    const host = document.getElementById('portscan-host').value.trim();
+    if (!host) return;
+    const portsStr = document.getElementById('portscan-ports').value.trim();
+    const ports = portsStr ? portsStr.split(',').map(p => parseInt(p.trim())).filter(p => !isNaN(p)) : null;
+
+    document.getElementById('portscan-results').innerHTML = '<div class="text-cyan-400">Scanning ports...</div>';
+
+    try {
+        const data = await api('/api/network/portscan', {
+            method: 'POST',
+            body: JSON.stringify({ host, ports }),
+        });
+
+        document.getElementById('portscan-results').innerHTML = `
+            <div class="mb-3 text-slate-300">Host: <span class="font-mono">${escapeHtml(data.host)}</span> — ${data.open_count} open, ${data.closed_count} closed</div>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                ${data.ports.map(p => `
+                    <div class="flex items-center gap-2 px-3 py-2 rounded ${p.status === 'open' ? 'bg-emerald-900/30 border border-emerald-800' : 'bg-slate-900 border border-slate-700'}">
+                        <span class="pulse-dot ${p.status === 'open' ? 'online' : 'offline'}"></span>
+                        <span class="font-mono">${p.port}</span>
+                        <span class="text-xs ${p.status === 'open' ? 'text-emerald-400' : 'text-slate-500'}">${p.status}</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    } catch (err) {}
+}
+
+async function runRdns() {
+    const ip = document.getElementById('rdns-ip').value.trim();
+    if (!ip) return;
+    document.getElementById('rdns-results').innerHTML = '<div class="text-cyan-400">Resolving...</div>';
+
+    try {
+        const data = await api('/api/network/reverse-dns', {
+            method: 'POST',
+            body: JSON.stringify({ ip }),
+        });
+
+        if (data.error) {
+            document.getElementById('rdns-results').innerHTML = `<div class="text-red-400">${escapeHtml(data.error)}</div>`;
+            return;
+        }
+
+        document.getElementById('rdns-results').innerHTML = `
+            <table class="w-full">
+                <tr class="border-b border-slate-700"><td class="py-2 text-slate-400 pr-4">IP</td><td class="py-2 font-mono">${escapeHtml(data.ip)}</td></tr>
+                <tr><td class="py-2 text-slate-400 pr-4 align-top">Hostnames</td><td class="py-2">${data.hostnames.map(h => `<div class="font-mono text-emerald-400">${escapeHtml(h)}</div>`).join('')}</td></tr>
+            </table>
+        `;
+    } catch (err) {}
+}
+</script>
+{% endblock %}

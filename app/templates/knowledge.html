@@ -1,4 +1,186 @@
-<!-- Knowledge base page — defined in Phase 8 -->
 {% extends "base.html" %}
 {% block title %}Knowledge Base — IT Operations{% endblock %}
-{% block content %}<h1>Knowledge Base</h1>{% endblock %}
+{% block page_title %}Knowledge Base{% endblock %}
+
+{% block content %}
+<!-- Search & Actions -->
+<div class="flex flex-wrap justify-between items-center gap-3 mb-6">
+    <div class="flex flex-wrap gap-2 flex-1">
+        <input id="kb-search" onkeyup="debounceSearch()" class="flex-1 min-w-[200px] bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-cyan-500" placeholder="Search articles...">
+        <select id="kb-category" onchange="loadArticles()" class="bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm">
+            <option value="">All Categories</option>
+            <option value="network">Network</option>
+            <option value="hardware">Hardware</option>
+            <option value="software">Software</option>
+            <option value="security">Security</option>
+        </select>
+    </div>
+    <button onclick="showCreateArticleModal()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg text-sm font-medium transition-colors">
+        + New Article
+    </button>
+</div>
+
+<!-- Articles Grid -->
+<div id="articles-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="text-sm text-slate-500 text-center py-12 col-span-full">Loading articles...</div>
+</div>
+
+<!-- Article Detail Modal (injected dynamically) -->
+<div id="article-detail"></div>
+
+<script>
+let searchTimeout = null;
+
+function debounceSearch() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(loadArticles, 300);
+}
+
+async function loadArticles() {
+    try {
+        const search = document.getElementById('kb-search').value.trim();
+        const category = document.getElementById('kb-category').value;
+        let url = '/api/knowledge?';
+        if (search) url += `search=${encodeURIComponent(search)}&`;
+        if (category) url += `category=${category}&`;
+
+        const articles = await api(url);
+        const grid = document.getElementById('articles-grid');
+
+        if (articles.length === 0) {
+            grid.innerHTML = '<div class="text-sm text-slate-500 text-center py-12 col-span-full">No articles found. Create one to get started.</div>';
+            return;
+        }
+
+        grid.innerHTML = articles.map(a => {
+            const preview = a.content.replace(/[#*`\[\]]/g, '').slice(0, 150);
+            const tagsList = a.tags ? a.tags.split(',').map(t => `<span class="px-1.5 py-0.5 bg-slate-700 rounded text-xs text-slate-400">${escapeHtml(t.trim())}</span>`).join('') : '';
+            return `
+                <div class="bg-slate-800 rounded-xl p-4 border border-slate-700 card-hover cursor-pointer" onclick="viewArticle(${a.id})">
+                    <div class="flex items-start justify-between mb-2">
+                        <h3 class="font-medium">${escapeHtml(a.title)}</h3>
+                        <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-700 text-slate-300">${a.category || 'General'}</span>
+                    </div>
+                    <p class="text-sm text-slate-400 mb-3">${escapeHtml(preview)}...</p>
+                    <div class="flex flex-wrap gap-1 mb-2">${tagsList}</div>
+                    <div class="text-xs text-slate-500">Updated ${timeAgo(a.updated_at)}</div>
+                </div>
+            `;
+        }).join('');
+    } catch (err) {
+        console.error('Load articles error:', err);
+    }
+}
+
+async function viewArticle(id) {
+    try {
+        const article = await api(`/api/knowledge/${id}`);
+        // Simple markdown-to-html conversion
+        let html = escapeHtml(article.content)
+            .replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold mt-4 mb-2">$1</h3>')
+            .replace(/^## (.+)$/gm, '<h2 class="text-xl font-semibold mt-4 mb-2">$1</h2>')
+            .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold mt-4 mb-2">$1</h1>')
+            .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-slate-900 rounded p-3 my-2 overflow-x-auto text-sm"><code>$2</code></pre>')
+            .replace(/`([^`]+)`/g, '<code class="bg-slate-900 px-1 rounded text-cyan-400">$1</code>')
+            .replace(/^- \[ \] (.+)$/gm, '<div class="flex items-center gap-2"><input type="checkbox" disabled><span>$1</span></div>')
+            .replace(/^- (.+)$/gm, '<li class="ml-4">$1</li>')
+            .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\n/g, '<br>');
+
+        const detail = document.getElementById('article-detail');
+        detail.innerHTML = `
+            <div class="modal-backdrop" onclick="if(event.target===this)this.innerHTML=''">
+                <div class="bg-slate-800 rounded-xl p-6 w-full max-w-2xl mx-4 border border-slate-700 max-h-[80vh] overflow-y-auto">
+                    <div class="flex items-start justify-between mb-4">
+                        <h2 class="text-xl font-bold">${escapeHtml(article.title)}</h2>
+                        <button onclick="document.getElementById('article-detail').innerHTML=''" class="text-slate-400 hover:text-white text-xl">&times;</button>
+                    </div>
+                    <div class="flex gap-2 mb-4">
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-slate-700 text-slate-300">${article.category || 'General'}</span>
+                        <span class="text-xs text-slate-500">${formatDate(article.updated_at)}</span>
+                    </div>
+                    <div class="prose prose-invert text-sm text-slate-300 leading-relaxed">${html}</div>
+                    <div class="flex gap-2 mt-6">
+                        <button onclick="deleteArticle(${article.id})" class="px-3 py-1.5 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded text-sm transition-colors">Delete</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    } catch (err) {}
+}
+
+async function deleteArticle(id) {
+    if (!confirm('Delete this article?')) return;
+    try {
+        await api(`/api/knowledge/${id}`, { method: 'DELETE' });
+        document.getElementById('article-detail').innerHTML = '';
+        showToast('Article deleted', 'success');
+        loadArticles();
+    } catch (err) {}
+}
+
+function showCreateArticleModal() {
+    const modal = document.createElement('div');
+    modal.id = 'create-article-modal';
+    modal.className = 'modal-backdrop';
+    modal.innerHTML = `
+        <div class="bg-slate-800 rounded-xl p-6 w-full max-w-lg mx-4 border border-slate-700">
+            <h3 class="text-lg font-semibold mb-4">New Article</h3>
+            <form onsubmit="createArticle(event)">
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm text-slate-400 mb-1">Title</label>
+                        <input id="art-title" required class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-400 mb-1">Content (Markdown supported)</label>
+                        <textarea id="art-content" rows="8" required class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 font-mono"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm text-slate-400 mb-1">Category</label>
+                            <select id="art-category" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm">
+                                <option value="network">Network</option>
+                                <option value="hardware">Hardware</option>
+                                <option value="software">Software</option>
+                                <option value="security">Security</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-slate-400 mb-1">Tags (comma-separated)</label>
+                            <input id="art-tags" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500" placeholder="e.g. dns, windows">
+                        </div>
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-5">
+                    <button type="submit" class="flex-1 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg text-sm font-medium transition-colors">Create</button>
+                    <button type="button" onclick="closeModal('create-article-modal')" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition-colors">Cancel</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+async function createArticle(e) {
+    e.preventDefault();
+    try {
+        await api('/api/knowledge', {
+            method: 'POST',
+            body: JSON.stringify({
+                title: document.getElementById('art-title').value,
+                content: document.getElementById('art-content').value,
+                category: document.getElementById('art-category').value,
+                tags: document.getElementById('art-tags').value || null,
+            }),
+        });
+        closeModal('create-article-modal');
+        showToast('Article created', 'success');
+        loadArticles();
+    } catch (err) {}
+}
+
+loadArticles();
+</script>
+{% endblock %}
