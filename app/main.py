@@ -7,11 +7,16 @@ from fastapi.templating import Jinja2Templates
 from app.config import settings
 from app.database import init_db
 
+# Import models so tables are registered with Base.metadata
+import app.models  # noqa: F401
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Startup: create tables and seed data
     await init_db()
+    from seed import seed_database
+    await seed_database()
     yield
     # Shutdown
 
