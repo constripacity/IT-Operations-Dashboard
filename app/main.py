@@ -12,6 +12,7 @@ from app.database import init_db
 import app.models  # noqa: F401
 
 from app.routers import services as services_router
+from app.routers import network as network_router
 from app.routers import websocket as websocket_router
 from app.services.health_checker import health_check_loop
 
@@ -42,6 +43,7 @@ templates = Jinja2Templates(directory="app/templates")
 
 # Register routers
 app.include_router(services_router.router)
+app.include_router(network_router.router)
 app.include_router(websocket_router.router)
 
 
