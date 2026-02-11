@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,6 +11,10 @@ from app.database import init_db
 # Import models so tables are registered with Base.metadata
 import app.models  # noqa: F401
 
+from app.routers import services as services_router
+from app.routers import websocket as websocket_router
+from app.services.health_checker import health_check_loop
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -17,8 +22,12 @@ async def lifespan(app: FastAPI):
     await init_db()
     from seed import seed_database
     await seed_database()
+
+    # Start background health check loop
+    task = asyncio.create_task(health_check_loop())
     yield
     # Shutdown
+    task.cancel()
 
 
 app = FastAPI(
@@ -30,6 +39,10 @@ app = FastAPI(
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
+
+# Register routers
+app.include_router(services_router.router)
+app.include_router(websocket_router.router)
 
 
 @app.get("/health")
