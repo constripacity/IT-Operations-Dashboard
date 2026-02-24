@@ -1,6 +1,6 @@
 # IT Operations Dashboard
 
-> A full-stack IT operations monitoring dashboard built with FastAPI, PostgreSQL, and vanilla JavaScript. Demonstrates both Systemintegration and Anwendungsentwicklung skills.
+
 
 **Live Demo:** Deployed on Render.com (free tier)
 
